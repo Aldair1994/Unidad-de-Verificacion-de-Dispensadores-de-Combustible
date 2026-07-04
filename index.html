@@ -251,10 +251,6 @@
     .p-fill{flex:1 1 auto;border-bottom:1px solid #000;min-width:24px;padding:0 4px;font-weight:600;white-space:nowrap}
     .p-line>.p-fill:last-child{flex:1 1 auto}
     .p-line.solo{flex-wrap:nowrap}
-    /* línea que ANULA un campo vacío en el PDF (evita que se escriba a mano) */
-    .p-fill.vd{border-bottom:none;position:relative}
-    .p-fill.vd::before{content:"";position:absolute;left:1px;right:1px;top:50%;border-top:1px solid #000}
-    table.pv td .cv{display:inline-block;width:80%;border-top:1px solid #000;vertical-align:middle}
     .p-cols{display:flex;gap:10px;margin-top:6px}
     .p-col{flex:1}
     table.pv{border-collapse:collapse;width:100%;font-size:8pt}
@@ -760,11 +756,10 @@ function refreshTableFromCroquis(){
 function recomputeAuto(){
   const num=v=>{const x=parseFloat(String(v).replace(',','.'));return isNaN(x)?null:x;};
   const rows=[...verBody.children].map(tr=>({
-    p1:tr.querySelector('.c-p1').value, p2:tr.querySelector('.c-p2').value,
-    res:tr.querySelector('.c-res').value
+    p1:tr.querySelector('.c-p1').value, p2:tr.querySelector('.c-p2').value
   }));
-  // Inmovilizaciones = surtidores rechazados (resultado decisivo < -6.0 o marcado "Rechazo")
-  let inm=0; rows.forEach(r=>{const v2=num(r.p2), v1=num(r.p1); const v=(v2!==null)?v2:v1; if((v!==null && v<-6) || r.res==='Rechazo') inm++;});
+  // Inmovilizaciones = cantidad de resultados en P2 menores a -6.0
+  let inm=0; rows.forEach(r=>{const v=num(r.p2); if(v!==null && v<-6) inm++;});
   const inmEl=document.getElementById('inmovilizaciones');
   if(inmEl) inmEl.value = inm>0 ? String(inm) : '';
   // Enviar reporte de calibración (Sí) si la fecha de ajuste tiene >3 meses, o si algún P2 < -3.0
@@ -1289,22 +1284,10 @@ document.getElementById('pdfBtn').addEventListener('click',()=>{
 function buildPrint(r){
   const root=document.getElementById('print-root');
   const seg=(v,opt)=>v===opt?'☑':'☐';
-  // Valores derivados directamente de los datos (robustos aunque el campo no se haya recalculado)
-  const numv=v=>{const x=parseFloat(String(v).replace(',','.'));return isNaN(x)?null:x;};
-  const inmN=(r.rows||[]).reduce((n,x)=>{const v2=numv(x.p2),v1=numv(x.p1);const v=(v2!=null)?v2:v1;return n+(((v!=null&&v<-6)||x.res==='Rechazo')?1:0);},0);
-  let totalMang=0; try{ totalMang=normalizeBoxes(r.croquis).reduce((s,b)=>s+hoseCount(b),0); }catch(e){}
-  // Campo/celda con LÍNEA DE ANULACIÓN si está vacío (evita que se escriba a mano en el PDF)
-  const F=(v,w)=>{const s=(v==null?'':String(v)).trim(); const st=`min-width:${w||24}px;display:inline-block`;
-    return s ? `<span class="p-fill" style="${st}">${esc(s)}</span>` : `<span class="p-fill vd" style="${st}">&nbsp;</span>`;};
-  const C=v=>{const s=(v==null?'':String(v)).trim(); return s?esc(s):'<span class="cv"></span>';};
-  const M=v=>v==='yes'?'✔':(v==='no'?'✗':'<span class="cv"></span>');
-  const voidS=w=>`<span class="p-fill vd" style="min-width:${w||40}px;display:inline-block">&nbsp;</span>`;
-  const totalTxt = totalMang>0 ? String(totalMang) : (String(r.totalSurtidores||'').trim() || voidS(45));
-  const inmTxt = inmN>0 ? String(inmN) : voidS(45);
-  const rows=(r.rows||[]).map((x,i)=>`<tr><td>${i+1}</td><td>${C(x.prod)}</td><td>${C(x.c)}</td>
-    <td>${C(x.s)}</td><td>${C(x.p1)}</td><td>${C(x.p2)}</td>
-    <td>${M(x.vc)}</td><td>${M(x.cal)}</td>
-    <td>${C(x.res)}</td></tr>`).join('');
+  const rows=(r.rows||[]).map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.prod)}</td><td>${esc(x.c)}</td>
+    <td>${esc(x.s)}</td><td>${esc(x.p1)}</td><td>${esc(x.p2)}</td>
+    <td>${x.vc==='yes'?'✔':x.vc==='no'?'✗':''}</td><td>${x.cal==='yes'?'✔':x.cal==='no'?'✗':''}</td>
+    <td>${esc(x.res)}</td></tr>`).join('');
   root.innerHTML=`
   <div class="p-head">
     <img src="${LOGOS.flag}"><img src="${LOGOS.gob}"><img src="${LOGOS.cename}"><img src="${LOGOS.uivml}">
@@ -1314,25 +1297,25 @@ function buildPrint(r){
   <div class="p-title">UNIDAD DE INSPECCIÓN Y VERIFICACIÓN EN MATERIA DE METROLOGÍA LEGAL</div>
 
   <hr class="p-rule"><div class="p-sub" style="margin-top:0">Estación de servicio</div>
-  <div class="p-line"><b>Nombre comercial:</b> ${F(r.nombreComercial,280)}
-     <b>Emblema:</b> ${F(r.emblema,130)}</div>
-  <div class="p-line"><b>Dirección:</b> ${F(r.direccion,520)}</div>
-  <div class="p-line"><b>Municipio:</b> ${F(r.municipio,200)}
-     <b>Departamento:</b> ${F(r.departamento,230)}</div>
-  <div class="p-line"><b>Tel:</b> ${F(r.tel,90)}
-     <b>Vehículos/día:</b> ${F(r.vehiculosDia,60)}
-     <b>Precios:</b> D ${F(r.precioD,40)}
-     R ${F(r.precioR,40)} S ${F(r.precioS,40)}</div>
+  <div class="p-line"><b>Nombre comercial:</b> <span class="p-fill" style="min-width:280px">${esc(r.nombreComercial)}</span>
+     <b>Emblema:</b> <span class="p-fill" style="min-width:130px">${esc(r.emblema)}</span></div>
+  <div class="p-line"><b>Dirección:</b> <span class="p-fill" style="min-width:520px">${esc(r.direccion)}</span></div>
+  <div class="p-line"><b>Municipio:</b> <span class="p-fill" style="min-width:200px">${esc(r.municipio)}</span>
+     <b>Departamento:</b> <span class="p-fill" style="min-width:230px">${esc(r.departamento)}</span></div>
+  <div class="p-line"><b>Tel:</b> <span class="p-fill" style="min-width:90px">${esc(r.tel)}</span>
+     <b>Vehículos/día:</b> <span class="p-fill" style="min-width:60px">${esc(r.vehiculosDia)}</span>
+     <b>Precios:</b> D <span class="p-fill">${esc(r.precioD)}</span>
+     R <span class="p-fill">${esc(r.precioR)}</span> S <span class="p-fill">${esc(r.precioS)}</span></div>
 
   <hr class="p-rule"><div class="p-sub" style="margin-top:0">Surtidores de combustible</div>
-  <div class="p-line"><b>Marca:</b> ${F(r.marca,200)}
-     <b>Modelo:</b> ${F(r.modelo,250)}</div>
-  <div class="p-line"><b>Última empresa de ajuste:</b> ${F(r.ultimaEmpresa,280)}
-     <b>Fecha:</b> ${F(r.fechaAjuste,120)}</div>
+  <div class="p-line"><b>Marca:</b> <span class="p-fill" style="min-width:200px">${esc(r.marca)}</span>
+     <b>Modelo:</b> <span class="p-fill" style="min-width:250px">${esc(r.modelo)}</span></div>
+  <div class="p-line"><b>Última empresa de ajuste:</b> <span class="p-fill" style="min-width:280px">${esc(r.ultimaEmpresa)}</span>
+     <b>Fecha:</b> <span class="p-fill" style="min-width:120px">${esc(r.fechaAjuste)}</span></div>
   <div class="p-line"><b>Control de precio unitario 18.927 L (5 gal):</b>
-     D ${F(r.ctrlD,40)} R ${F(r.ctrlR,40)} S ${F(r.ctrlS,40)}</div>
+     D <span class="p-fill">${esc(r.ctrlD)}</span> R <span class="p-fill">${esc(r.ctrlR)}</span> S <span class="p-fill">${esc(r.ctrlS)}</span></div>
   <div class="p-line"><b>Mojado de medidores volumétricos:</b>
-     D ${F(r.mojD,40)} R ${F(r.mojR,40)} S ${F(r.mojS,40)}
+     D <span class="p-fill">${esc(r.mojD)}</span> R <span class="p-fill">${esc(r.mojR)}</span> S <span class="p-fill">${esc(r.mojS)}</span>
      No aplica ${seg(r.mojadoNA,'Sí')}</div>
 
   <div class="p-sub">REPORTE TÉCNICO DE VERIFICACIÓN A SURTIDORES DE COMBUSTIBLE</div>
@@ -1342,12 +1325,12 @@ function buildPrint(r){
         <th>Vuelta<br>a cero</th><th>Calc.</th><th>Resultado</th></tr></thead>
         <tbody>${rows||'<tr><td colspan="9">&nbsp;</td></tr>'}</tbody></table>
       <div style="font-size:7.4pt;margin-top:3px"><b>C</b>=caja · <b>S</b>=surtidor · <b>P</b>=prueba ·
-        Total de surtidores: <b>${totalTxt}</b><br>
+        Total de surtidores: <b>${esc(r.totalSurtidores)}</b><br>
         <b>Vuelta a Cero</b>: ¿el dispensador regresó a cero? ·
         <b>Calculadora</b>: precio del galón por cantidad despachada</div>
       <div style="font-size:7.4pt;margin-top:3px"><i>Patrones Seraphin Especial “J”: Regular ${esc(r.patRegular)} ·
         Diesel ${esc(r.patDiesel)} · Súper ${esc(r.patSuper)}</i></div>
-      <div style="font-size:7.6pt;margin-top:3px"><b>Inmovilizaciones:</b> ${inmTxt}<br>
+      <div style="font-size:7.6pt;margin-top:3px"><b>Inmovilizaciones:</b> ${esc(r.inmovilizaciones)||'____'}<br>
         Se requiere que la estación de servicio reajuste todos los surtidores de combustible.</div>
     </div>
     <div class="p-col" style="flex:.95">
@@ -1368,7 +1351,7 @@ function buildPrint(r){
    en la circular No. DGH-CIRC-11-2005. Los combustibles extraídos en la inspección son devueltos a los tanques de
    almacenamiento de dicha estación.<br>
    <b>Enviar reporte de calibración vigente, en un plazo no mayor a 10 días:</b> Sí ${seg(r.enviarReporte,'Sí')} No ${seg(r.enviarReporte,'No')}
-   &nbsp; <b>Observaciones:</b> ${F(r.observaciones,300)}</div>
+   &nbsp; <b>Observaciones:</b> ${esc(r.observaciones)}</div>
 
   <div class="p-sigs">
     <div class="p-sig">${r.sigEncargado?`<img src="${r.sigEncargado}">`:'<div style="height:50px"></div>'}
